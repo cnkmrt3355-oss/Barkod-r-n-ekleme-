@@ -124,6 +124,12 @@
     padding:2px 8px;
     border-radius:999px;
   }
+  .section-hint{
+    font-size:12px;
+    color:var(--text-dim);
+    margin:-6px 0 12px;
+    line-height:1.5;
+  }
 
   /* ---- Tarayıcı ---- */
   #reader{
@@ -452,14 +458,15 @@
   </section>
 
   <section class="card">
-    <h2>Bu Oturumda Taranan Ürünler <span class="count" id="prodCount">0</span></h2>
+    <h2>📦 Kayıtlı Ürünler <span class="count" id="prodCount">0</span></h2>
+    <p class="section-hint">Kaydettiğiniz ürünler burada birikir ve cihazınızda saklanır — sayfayı kapatıp tekrar açsanız bile kaybolmaz.</p>
     <div id="emptyState">
       <svg width="40" height="40" viewBox="0 0 40 40" fill="none"><rect x="4" y="8" width="32" height="24" rx="4" stroke="#8B96AD" stroke-width="1.6"/><path d="M11 14v12M15 14v12M19 14v6M23 14v12M27 14v6M31 14v12" stroke="#8B96AD" stroke-width="1.4"/></svg>
-      <div>Henüz ürün taranmadı.<br>Yukarıdan kamerayla tarayın veya barkodu elle girin.</div>
+      <div>Henüz kayıtlı ürün yok.<br>Yukarıdan kamerayla tarayın veya barkodu elle girin.</div>
     </div>
     <div id="prodList"></div>
     <div class="btn-row" id="clearRow" style="display:none;">
-      <button class="btn-danger btn-block" id="btnClearAll">Listeyi Temizle</button>
+      <button class="btn-danger btn-block" id="btnClearAll">Kayıtlı Ürünleri Temizle</button>
     </div>
   </section>
 
@@ -557,9 +564,18 @@
       height: Math.floor(viewfinderHeight * 0.16)
     });
 
+    // Yüksek çözünürlük + sürekli otomatik odaklama iste (destekleyen cihazlarda
+    // netlik ve barkod okuma başarısını belirgin şekilde artırır).
+    const cameraConfig = {
+      facingMode: 'environment',
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+      advanced: [{ focusMode: 'continuous' }]
+    };
+
     html5QrCode.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: qrboxFn, aspectRatio: 0.75 },
+      cameraConfig,
+      { fps: 12, qrbox: qrboxFn, aspectRatio: 0.75, disableFlip: false },
       (decodedText) => onScanSuccess(decodedText),
       () => {}
     ).then(()=>{
@@ -567,7 +583,15 @@
       $('reader').classList.remove('inactive');
       setStatus('Taranıyor — barkodu çerçeveye getirin', 'live');
       $('btnToggleScan').textContent = '⏸ Taramayı Durdur';
+      // Odak modunu ayrıca başlattıktan sonra da uygula — bazı cihazlarda
+      // sadece başlangıç kısıtlamasıyla değil, akış başladıktan sonra devreye girer.
+      try{
+        html5QrCode.applyVideoConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(()=>{});
+      }catch(e){}
+      // Yetenek bilgisi (flaş/zoom) bazı cihazlarda akış oturduktan hemen sonra
+      // henüz dolu gelmeyebilir — iki kez dene.
       setupCameraControls();
+      setTimeout(setupCameraControls, 600);
     }).catch((err)=>{
       setStatus('Kamera açılamadı: izin verilmedi veya bulunamadı.', 'err');
       console.error(err);
@@ -580,8 +604,6 @@
   function setupCameraControls(){
     let caps = null;
     try{ caps = html5QrCode.getRunningTrackCapabilities(); }catch(e){}
-    torchOn = false;
-    $('btnTorch').classList.remove('active');
 
     const hasTorch = !!(caps && caps.torch);
     const hasZoom = !!(caps && caps.zoom && caps.zoom.max > caps.zoom.min);
@@ -593,7 +615,7 @@
       $('zoomRange').min = caps.zoom.min;
       $('zoomRange').max = caps.zoom.max;
       $('zoomRange').step = caps.zoom.step || 0.1;
-      $('zoomRange').value = caps.zoom.min;
+      if(!$('zoomRange').dataset.touched) $('zoomRange').value = caps.zoom.min;
     }else{
       $('zoomWrap').style.display = 'none';
     }
@@ -610,6 +632,7 @@
   });
 
   $('zoomRange').addEventListener('input', (e)=>{
+    e.target.dataset.touched = '1';
     if(!html5QrCode || !scanning) return;
     const val = parseFloat(e.target.value);
     html5QrCode.applyVideoConstraints({ advanced: [{ zoom: val }] }).catch((e)=>console.error(e));
@@ -619,6 +642,7 @@
     $('cameraControls').style.display = 'none';
     torchOn = false;
     $('btnTorch').classList.remove('active');
+    delete $('zoomRange').dataset.touched;
   }
 
   function stopScan(){
@@ -792,7 +816,7 @@
 
   $('btnClearAll').addEventListener('click', ()=>{
     if(!products.length) return;
-    if(confirm('Bu oturumda taranan ' + products.length + ' ürünün tamamı silinsin mi? Bu işlem geri alınamaz.')){
+    if(confirm('Kayıtlı ' + products.length + ' ürünün tamamı silinsin mi? Bu işlem geri alınamaz.')){
       products = [];
       persist();
       renderList();
