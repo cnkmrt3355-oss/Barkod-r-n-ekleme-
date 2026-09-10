@@ -2,7 +2,7 @@
 <html lang="tr" data-theme="dark">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#090D16">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -32,7 +32,7 @@
     --radius-sm:10px;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-  html,body{margin:0;padding:0;overflow-x:hidden;overscroll-behavior-y:none;}
+  html,body{margin:0;padding:0;overflow-x:hidden;}
   html{height:100%;}
   body{
     background:
@@ -45,7 +45,6 @@
     min-height:100dvh;
     padding-bottom:104px;
     padding-top:env(safe-area-inset-top);
-    touch-action:pan-y;
   }
 
   /* Yatay tutulunca uyarı — uygulama dikey kullanım için tasarlandı */
@@ -141,7 +140,9 @@
     height:100% !important;
     object-fit:cover;
     border-radius:var(--radius-sm);
+    touch-action:pan-y !important;
   }
+  #reader{touch-action:pan-y;}
   #reader img{border-radius:var(--radius-sm);}
   #reader::after{
     /* ortada hedef çerçeve — barkodu nereye getireceğini gösterir */
@@ -168,7 +169,36 @@
   .dot.live{background:var(--accent);box-shadow:0 0 0 3px var(--accent-dim);}
   .dot.err{background:var(--danger);box-shadow:0 0 0 3px var(--danger-dim);}
 
-  .btn-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+  .btn-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center;}
+  .zoom-wrap{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex:1;
+    min-width:140px;
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:var(--radius-sm);
+    padding:8px 12px;
+  }
+  .zoom-label{font-size:14px;flex-shrink:0;}
+  .zoom-wrap input[type=range]{
+    -webkit-appearance:none;
+    flex:1;
+    height:4px;
+    background:var(--border);
+    border-radius:999px;
+    outline:none;
+  }
+  .zoom-wrap input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    width:18px;height:18px;
+    border-radius:50%;
+    background:var(--accent);
+    cursor:pointer;
+    border:2px solid var(--accent-ink);
+  }
+  #btnTorch.active{background:var(--accent);color:var(--accent-ink);}
   button{
     font-family:inherit;
     cursor:pointer;
@@ -356,6 +386,13 @@
     <div class="btn-row">
       <button class="btn-primary btn-block" id="btnToggleScan">📷 Taramayı Başlat</button>
     </div>
+    <div class="btn-row" id="cameraControls" style="display:none;">
+      <button class="btn-ghost" id="btnTorch">🔦 Flaş</button>
+      <div class="zoom-wrap" id="zoomWrap" style="display:none;">
+        <span class="zoom-label">🔍</span>
+        <input type="range" id="zoomRange" min="1" max="5" step="0.1" value="1">
+      </div>
+    </div>
     <div class="manual-row">
       <input type="text" id="manualBarcode" placeholder="Barkodu elle yaz…" inputmode="numeric">
       <button class="btn-ghost" id="btnManualAdd">Ekle</button>
@@ -530,10 +567,58 @@
       $('reader').classList.remove('inactive');
       setStatus('Taranıyor — barkodu çerçeveye getirin', 'live');
       $('btnToggleScan').textContent = '⏸ Taramayı Durdur';
+      setupCameraControls();
     }).catch((err)=>{
       setStatus('Kamera açılamadı: izin verilmedi veya bulunamadı.', 'err');
       console.error(err);
     });
+  }
+
+  /* ---------- Flaş / Zoom ---------- */
+  let torchOn = false;
+
+  function setupCameraControls(){
+    let caps = null;
+    try{ caps = html5QrCode.getRunningTrackCapabilities(); }catch(e){}
+    torchOn = false;
+    $('btnTorch').classList.remove('active');
+
+    const hasTorch = !!(caps && caps.torch);
+    const hasZoom = !!(caps && caps.zoom && caps.zoom.max > caps.zoom.min);
+
+    $('btnTorch').style.display = hasTorch ? 'inline-flex' : 'none';
+
+    if(hasZoom){
+      $('zoomWrap').style.display = 'flex';
+      $('zoomRange').min = caps.zoom.min;
+      $('zoomRange').max = caps.zoom.max;
+      $('zoomRange').step = caps.zoom.step || 0.1;
+      $('zoomRange').value = caps.zoom.min;
+    }else{
+      $('zoomWrap').style.display = 'none';
+    }
+
+    $('cameraControls').style.display = (hasTorch || hasZoom) ? 'flex' : 'none';
+  }
+
+  $('btnTorch').addEventListener('click', ()=>{
+    if(!html5QrCode || !scanning) return;
+    const next = !torchOn;
+    html5QrCode.applyVideoConstraints({ advanced: [{ torch: next }] })
+      .then(()=>{ torchOn = next; $('btnTorch').classList.toggle('active', torchOn); })
+      .catch((e)=> console.error(e));
+  });
+
+  $('zoomRange').addEventListener('input', (e)=>{
+    if(!html5QrCode || !scanning) return;
+    const val = parseFloat(e.target.value);
+    html5QrCode.applyVideoConstraints({ advanced: [{ zoom: val }] }).catch((e)=>console.error(e));
+  });
+
+  function hideCameraControls(){
+    $('cameraControls').style.display = 'none';
+    torchOn = false;
+    $('btnTorch').classList.remove('active');
   }
 
   function stopScan(){
@@ -544,11 +629,13 @@
         $('reader').classList.add('inactive');
         setStatus('Kamera kapalı');
         $('btnToggleScan').textContent = '📷 Taramayı Başlat';
+        hideCameraControls();
       }).catch(()=>{
         scanning = false;
         $('reader').classList.add('inactive');
         setStatus('Kamera kapalı');
         $('btnToggleScan').textContent = '📷 Taramayı Başlat';
+        hideCameraControls();
       });
     }
   }
