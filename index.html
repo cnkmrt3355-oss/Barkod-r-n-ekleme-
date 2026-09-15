@@ -154,8 +154,8 @@
     /* ortada hedef çerçeve — barkodu nereye getireceğini gösterir */
     content:'';
     position:absolute;
-    left:8%; right:8%;
-    top:42%; height:16%;
+    left:5%; right:5%;
+    top:40%; height:20%;
     border:2px solid var(--accent);
     border-radius:10px;
     box-shadow:0 0 0 999px rgba(0,0,0,.28);
@@ -394,6 +394,7 @@
     </div>
     <div class="btn-row" id="cameraControls" style="display:none;">
       <button class="btn-ghost" id="btnTorch">🔦 Flaş</button>
+      <button class="btn-ghost" id="btnSwitchCam" style="display:none;">🔄 Kamera</button>
       <div class="zoom-wrap" id="zoomWrap" style="display:none;">
         <span class="zoom-label">🔍</span>
         <input type="range" id="zoomRange" min="1" max="5" step="0.1" value="1">
@@ -489,6 +490,8 @@
 <script>
 (function(){
   const STORAGE_KEY = 'barkodKayitUrunleri_v1';
+  const CAMERA_PREF_KEY = 'barkodKayitKameraTercihi_v1';
+
   let products = [];
   try{
     products = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
@@ -498,6 +501,10 @@
   let html5QrCode = null;
   let scanning = false;
   let lastScan = { code:null, time:0 };
+
+  /* ==== KAMERA HATIRLAMA ==== */
+  let availableCameras = [];
+  let currentCameraIndex = 0;
 
   const $ = (id) => document.getElementById(id);
 
@@ -534,65 +541,131 @@
     $('scanDot').className = 'dot' + (mode ? ' ' + mode : '');
   }
 
-  function startScan(){
+  async function startScan(){
     if(typeof Html5Qrcode === 'undefined'){
       setStatus('Tarayıcı kütüphanesi yüklenemedi — internet bağlantınızı kontrol edin.', 'err');
       return;
     }
-    html5QrCode = html5QrCode || new Html5Qrcode('reader', {
+
+    // Her başlatmada yeni instance oluştur — kamera değiştirme sonrası temiz başlangıç
+    html5QrCode = new Html5Qrcode('reader', {
       formatsToSupport: [
         Html5QrcodeSupportedFormats.EAN_13,
         Html5QrcodeSupportedFormats.EAN_8,
         Html5QrcodeSupportedFormats.UPC_A,
         Html5QrcodeSupportedFormats.UPC_E,
         Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.CODE_39,
-        Html5QrcodeSupportedFormats.CODABAR,
-        Html5QrcodeSupportedFormats.ITF,
         Html5QrcodeSupportedFormats.QR_CODE
       ],
       verbose:false
     });
+
     setStatus('Kamera açılıyor…');
-    // Telefon dik dururken kilitlemeyi dene (sadece tam ekran/PWA bağlamında çalışır, desteklenmezse sessizce geç)
+
+    // Telefon dik dururken kilitlemeyi dene (sadece tam ekran/PWA bağlamında çalışır)
     try{
       if(screen.orientation && screen.orientation.lock) screen.orientation.lock('portrait').catch(()=>{});
     }catch(e){}
 
-    const qrboxFn = (viewfinderWidth, viewfinderHeight) => ({
-      width: Math.floor(viewfinderWidth * 0.84),
-      height: Math.floor(viewfinderHeight * 0.16)
-    });
+    try{
+      // Kamera listesini al (bir kere al, sonra önbellekle)
+      if(!availableCameras.length){
+        availableCameras = await Html5Qrcode.getCameras();
+      }
+      if(!availableCameras || !availableCameras.length){
+        setStatus('Kamera bulunamadı.', 'err');
+        return;
+      }
 
-    // Kamerayı önce en uyumlu (sade) ayarla aç — cihazların büyük kısmı bunu
-    // sorunsuz kabul eder. Yüksek çözünürlük/odaklama isteklerini kamera
-    // açıldıktan SONRA, ayrı ayrı ve güvenli şekilde deneriz; böylece bir cihaz
-    // bu ek isteklerden birini desteklemese bile kamera reddedilmez.
-    html5QrCode.start(
-      { facingMode: 'environment' },
-      { fps: 12, qrbox: qrboxFn, aspectRatio: 0.75 },
-      (decodedText) => onScanSuccess(decodedText),
-      () => {}
-    ).then(()=>{
+      // ⚡ Kayıtlı kamera tercihini uygula
+      const prefLabel = localStorage.getItem(CAMERA_PREF_KEY);
+      let matched = false;
+      if(prefLabel){
+        const pi = availableCameras.findIndex(c => c.label === prefLabel);
+        if(pi >= 0){ currentCameraIndex = pi; matched = true; }
+      }
+      if(!matched){
+        // Tercih yoksa arka kamerayı seç
+        const bi = availableCameras.findIndex(c => /back|rear|environment|arka/i.test(c.label || ''));
+        currentCameraIndex = bi >= 0 ? bi : 0;
+      }
+
+      const camId = availableCameras[currentCameraIndex].id;
+
+      // ⚡ HIZ: Geniş tarama alanı (kolay hizalama)
+      const qrboxFn = (viewfinderWidth, viewfinderHeight) => ({
+        width: Math.floor(viewfinderWidth * 0.92),
+        height: Math.floor(viewfinderHeight * 0.22)
+      });
+
+      // ⚡ HIZ: 30 FPS + native BarcodeDetector + flip kapalı
+      await html5QrCode.start(
+        { deviceId: { exact: camId } },
+        {
+          fps: 30,
+          qrbox: qrboxFn,
+          aspectRatio: 0.75,
+          disableFlip: true,
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true
+          }
+        },
+        (decodedText) => onScanSuccess(decodedText),
+        () => {}
+      );
+
       scanning = true;
       $('reader').classList.remove('inactive');
       setStatus('Taranıyor — barkodu çerçeveye getirin', 'live');
       $('btnToggleScan').textContent = '⏸ Taramayı Durdur';
-      // Netlik iyileştirmeleri: her biri kendi başına dener, biri desteklenmese
-      // bile diğerlerini veya kameranın çalışmasını etkilemez.
-      try{ html5QrCode.applyVideoConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(()=>{}); }catch(e){}
-      try{ html5QrCode.applyVideoConstraints({ advanced: [{ width: 1920, height: 1080 }] }).catch(()=>{}); }catch(e){}
+
+      // Kamera değiştirme butonunu göster (birden fazla kamera varsa)
+      if(availableCameras.length > 1){
+        $('btnSwitchCam').style.display = 'inline-flex';
+      }
+
+      // ⚡ ÇÖZÜNÜRLÜK: 720×960 (dikey) — barkod için ideal, CPU'yu yormaz
+      try{
+        await html5QrCode.applyVideoConstraints({
+          width: { ideal: 720, max: 1280 },
+          height: { ideal: 960, max: 1707 },
+          advanced: [
+            { focusMode: 'continuous' },
+            { frameRate: { ideal: 30, max: 30 } }
+          ]
+        });
+      }catch(e){
+        try{
+          await html5QrCode.applyVideoConstraints({
+            width: { ideal: 720 },
+            height: { ideal: 960 }
+          });
+        }catch(e2){}
+      }
+
+      // Video elementini mobil uyumlu hale getir
+      const v = document.querySelector('#reader video');
+      if(v){
+        v.setAttribute('playsinline', 'true');
+        v.setAttribute('autoplay', 'true');
+        v.setAttribute('muted', 'true');
+        v.muted = true;
+      }
+
+      // ⚡ Kamera ısınma süresi — ilk frame hazır olmadan tarama başlamasın
+      await new Promise(r => setTimeout(r, 400));
+
       // Yetenek bilgisi (flaş/zoom) bazı cihazlarda akış oturduktan hemen sonra
       // henüz dolu gelmeyebilir — iki kez dene.
       setupCameraControls();
       setTimeout(setupCameraControls, 600);
-    }).catch((err)=>{
+    }catch(err){
       setStatus('Kamera açılamadı: izin verilmedi veya bulunamadı.', 'err');
       console.error(err);
-    });
+    }
   }
 
-  /* ---------- Flaş / Zoom ---------- */
+  /* ---------- Flaş / Zoom / Kamera Değiştir ---------- */
   let torchOn = false;
 
   function setupCameraControls(){
@@ -601,8 +674,10 @@
 
     const hasTorch = !!(caps && caps.torch);
     const hasZoom = !!(caps && caps.zoom && caps.zoom.max > caps.zoom.min);
+    const hasMultiCam = availableCameras.length > 1;
 
     $('btnTorch').style.display = hasTorch ? 'inline-flex' : 'none';
+    $('btnSwitchCam').style.display = hasMultiCam ? 'inline-flex' : 'none';
 
     if(hasZoom){
       $('zoomWrap').style.display = 'flex';
@@ -614,7 +689,7 @@
       $('zoomWrap').style.display = 'none';
     }
 
-    $('cameraControls').style.display = (hasTorch || hasZoom) ? 'flex' : 'none';
+    $('cameraControls').style.display = (hasTorch || hasZoom || hasMultiCam) ? 'flex' : 'none';
   }
 
   $('btnTorch').addEventListener('click', ()=>{
@@ -630,6 +705,29 @@
     if(!html5QrCode || !scanning) return;
     const val = parseFloat(e.target.value);
     html5QrCode.applyVideoConstraints({ advanced: [{ zoom: val }] }).catch((e)=>console.error(e));
+  });
+
+  // ⚡ Kamera değiştirme — seçim localStorage'a kaydedilir
+  $('btnSwitchCam').addEventListener('click', async ()=>{
+    if(availableCameras.length < 2 || !scanning) return;
+    currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
+    try{
+      localStorage.setItem(CAMERA_PREF_KEY, availableCameras[currentCameraIndex].label || '');
+    }catch(e){}
+
+    const camLabel = availableCameras[currentCameraIndex].label || ('Kamera ' + (currentCameraIndex + 1));
+    setStatus('Kamera değiştiriliyor: ' + camLabel);
+
+    // Mevcut taramayı durdur
+    try{
+      await html5QrCode.stop();
+      html5QrCode.clear();
+    }catch(e){}
+    scanning = false;
+    hideCameraControls();
+
+    // Yeni kamerayla başlat
+    setTimeout(() => startScan(), 300);
   });
 
   function hideCameraControls(){
