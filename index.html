@@ -150,19 +150,55 @@
   }
   #reader{touch-action:pan-y;}
   #reader img{border-radius:var(--radius-sm);}
-  #reader::after{
-    /* ortada hedef çerçeve — barkodu nereye getireceğini gösterir */
+
+  /* ---- Hedef çerçeve — köşe braketli kare (native tarayıcı uygulamalarındaki gibi) ---- */
+  .scan-overlay{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    pointer-events:none;
+    z-index:5;
+  }
+  .scan-frame{
+    position:relative;
+    width:76%;
+    aspect-ratio:1/1;
+    max-height:78%;
+    transition:filter .15s ease;
+  }
+  .scan-frame::before{
     content:'';
     position:absolute;
-    left:5%; right:5%;
-    top:40%; height:20%;
-    border:2px solid var(--accent);
-    border-radius:10px;
-    box-shadow:0 0 0 999px rgba(0,0,0,.28);
-    pointer-events:none;
-    opacity:.9;
+    inset:0;
+    border-radius:16px;
+    box-shadow:0 0 0 999px rgba(0,0,0,.35);
   }
-  #reader.inactive::after{display:none;}
+  .scan-frame .corner{
+    position:absolute;
+    width:26px; height:26px;
+    border:3px solid var(--accent);
+    transition:border-color .15s ease;
+  }
+  .scan-frame .corner.tl{top:-2px;left:-2px;border-right:none;border-bottom:none;border-top-left-radius:12px;}
+  .scan-frame .corner.tr{top:-2px;right:-2px;border-left:none;border-bottom:none;border-top-right-radius:12px;}
+  .scan-frame .corner.bl{bottom:-2px;left:-2px;border-right:none;border-top:none;border-bottom-left-radius:12px;}
+  .scan-frame .corner.br{bottom:-2px;right:-2px;border-left:none;border-top:none;border-bottom-right-radius:12px;}
+  .scan-frame .scan-laser{
+    position:absolute;
+    left:4%; right:4%;
+    height:2px;
+    top:8%;
+    background:linear-gradient(90deg, transparent, var(--accent), transparent);
+    box-shadow:0 0 8px 1px var(--accent);
+    animation:laserMove 1.7s ease-in-out infinite;
+  }
+  @keyframes laserMove{
+    0%,100%{top:8%;}
+    50%{top:92%;}
+  }
+  .scan-frame.success::before{box-shadow:0 0 0 999px rgba(16,185,129,.22);}
+  .scan-frame.success .corner{border-color:#fff;}
+  .scan-frame.success .scan-laser{display:none;}
+  #reader.inactive .scan-overlay{display:none;}
   .scan-status{
     display:flex;
     align-items:center;
@@ -331,6 +367,16 @@
   }
   .info-note b{color:var(--text);}
 
+  .import-msg{
+    font-size:12.5px;
+    margin:8px 0 2px;
+    min-height:15px;
+    line-height:1.4;
+    color:var(--text-dim);
+  }
+  .import-msg.ok{color:var(--accent);}
+  .import-msg.err{color:var(--danger);}
+
   /* ---- Alt export bar ---- */
   .export-bar{
     position:fixed;
@@ -384,7 +430,17 @@
 
   <section class="card">
     <h2>Kamera ile Tara</h2>
-    <div id="reader" class="inactive"></div>
+    <div id="reader" class="inactive">
+      <div class="scan-overlay" id="scanOverlay">
+        <div class="scan-frame" id="scanFrame">
+          <span class="corner tl"></span>
+          <span class="corner tr"></span>
+          <span class="corner bl"></span>
+          <span class="corner br"></span>
+          <div class="scan-laser"></div>
+        </div>
+      </div>
+    </div>
     <div class="scan-status">
       <span class="dot" id="scanDot"></span>
       <span id="scanStatusText">Kamera kapalı</span>
@@ -399,6 +455,10 @@
         <span class="zoom-label">🔍</span>
         <input type="range" id="zoomRange" min="1" max="5" step="0.1" value="1">
       </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-ghost btn-block" id="btnGallery">🖼️ Galeriden Görsel Tara</button>
+      <input type="file" id="galleryInput" accept="image/*" style="display:none">
     </div>
     <div class="manual-row">
       <input type="text" id="manualBarcode" placeholder="Barkodu elle yaz…" inputmode="numeric">
@@ -461,6 +521,13 @@
   <section class="card">
     <h2>📦 Kayıtlı Ürünler <span class="count" id="prodCount">0</span></h2>
     <p class="section-hint">Kaydettiğiniz ürünler burada birikir ve cihazınızda saklanır — sayfayı kapatıp tekrar açsanız bile kaybolmaz.</p>
+    <div class="btn-row">
+      <button class="btn-ghost" id="btnImportTxt">📄 TXT'den Yükle</button>
+      <button class="btn-ghost" id="btnImportCsv">📊 CSV'den Yükle</button>
+    </div>
+    <input type="file" id="importTxtInput" accept=".txt,text/plain" style="display:none">
+    <input type="file" id="importCsvInput" accept=".csv,text/csv" style="display:none">
+    <div class="import-msg" id="importMsg"></div>
     <div id="emptyState">
       <svg width="40" height="40" viewBox="0 0 40 40" fill="none"><rect x="4" y="8" width="32" height="24" rx="4" stroke="#8B96AD" stroke-width="1.6"/><path d="M11 14v12M15 14v12M19 14v6M23 14v12M27 14v6M31 14v12" stroke="#8B96AD" stroke-width="1.4"/></svg>
       <div>Henüz kayıtlı ürün yok.<br>Yukarıdan kamerayla tarayın veya barkodu elle girin.</div>
@@ -473,8 +540,8 @@
 
 </main>
 
-<div class="export-bar">
-  <div class="export-bar-inner">
+<div class="export-bar" id="exportBar">
+  <div class="export-bar-inner" id="exportModeBar">
     <div class="export-bar-label">
       <span id="exportCountLabel">0 ürün hazır</span>
       <span>Format: Barkodlu Satış Programı uyumlu</span>
@@ -482,6 +549,16 @@
     <div class="export-buttons">
       <button class="btn-ghost" id="btnExportTxt">📄 TXT indir</button>
       <button class="btn-primary" id="btnExportCsv">📊 CSV indir</button>
+    </div>
+  </div>
+  <div class="export-bar-inner" id="formModeBar" style="display:none;">
+    <div class="export-bar-label">
+      <span id="formBarBarcode">—</span>
+      <span>Barkodu düzenliyorsunuz</span>
+    </div>
+    <div class="export-buttons">
+      <button class="btn-ghost" id="btnFormBarCancel">Vazgeç</button>
+      <button class="btn-primary" id="btnFormBarSave">Listeye Ekle</button>
     </div>
   </div>
 </div>
@@ -541,13 +618,180 @@
     $('scanDot').className = 'dot' + (mode ? ' ' + mode : '');
   }
 
+  // İki motor: (1) native BarcodeDetector — Android/Chrome'da ML Kit tabanlı, en hızlı
+  //            (2) html5-qrcode kütüphanesi — native destek olmayan tarayıcılar için yedek
+  let engine = null;           // 'native' | 'html5qrcode'
+  let mediaStream = null;      // native mod video akışı
+  let videoEl = null;          // native mod <video>
+  let currentTrack = null;     // native mod aktif video track'i
+  let detector = null;         // native mod BarcodeDetector örneği
+  let rafId = null;            // native mod tarama döngüsü
+  let torchOn = false;
+
+  const NATIVE_FORMATS = ['ean_13','ean_8','upc_a','upc_e','code_128','qr_code'];
+  const OVERLAY_HTML = '<div class="scan-overlay" id="scanOverlay"><div class="scan-frame" id="scanFrame">'
+    + '<span class="corner tl"></span><span class="corner tr"></span>'
+    + '<span class="corner bl"></span><span class="corner br"></span>'
+    + '<div class="scan-laser"></div></div></div>';
+
+  async function nativeDetectorUsable(){
+    if(!('BarcodeDetector' in window) || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return false;
+    try{
+      const supported = await BarcodeDetector.getSupportedFormats();
+      const need = ['qr_code','ean_13','code_128'];
+      return need.every(f => supported.includes(f));
+    }catch(e){ return false; }
+  }
+
+  function flashSuccess(){
+    const frame = $('scanFrame');
+    if(!frame) return;
+    frame.classList.add('success');
+    setTimeout(()=> frame.classList.remove('success'), 380);
+  }
+
+  function onScanSuccess(code){
+    const now = Date.now();
+    if(lastScan.code === code && (now - lastScan.time) < 2500) return; // aynı kodu art arda okuma
+    lastScan = { code, time: now };
+    vibrate(); beep(); flashSuccess();
+    openForm(code);
+  }
+
+  async function refreshCameraListNative(){
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cams = devices.filter(d=>d.kind === 'videoinput').map(d=>({ id:d.deviceId, label:d.label || '' }));
+    if(cams.length) availableCameras = cams;
+  }
+
+  function pickPreferredCamera(){
+    const prefLabel = localStorage.getItem(CAMERA_PREF_KEY);
+    let matched = false;
+    if(prefLabel){
+      const pi = availableCameras.findIndex(c => c.label === prefLabel);
+      if(pi >= 0){ currentCameraIndex = pi; matched = true; }
+    }
+    if(!matched){
+      const bi = availableCameras.findIndex(c => /back|rear|environment|arka/i.test(c.label || ''));
+      currentCameraIndex = bi >= 0 ? bi : 0;
+    }
+  }
+
   async function startScan(){
+    setStatus('Kamera açılıyor…');
+    try{
+      if(screen.orientation && screen.orientation.lock) screen.orientation.lock('portrait').catch(()=>{});
+    }catch(e){}
+
+    if(await nativeDetectorUsable()){
+      try{
+        await startNativeScan();
+        return;
+      }catch(err){
+        console.error('Native tarayıcı başlatılamadı, yedek yönteme geçiliyor:', err);
+        stopNativeInternals();
+      }
+    }
+    await startHtml5QrcodeScan();
+  }
+
+  /* ===== 1) NATIVE MOTOR — BarcodeDetector + getUserMedia (video daki uygulama gibi anlık okuma) ===== */
+  function buildVideoConstraints(){
+    const base = {
+      width: { ideal: 1280, max: 1920 },
+      height: { ideal: 960, max: 1440 },
+      frameRate: { ideal: 30, max: 30 }
+    };
+    if(availableCameras.length && availableCameras[currentCameraIndex] && availableCameras[currentCameraIndex].id){
+      base.deviceId = { exact: availableCameras[currentCameraIndex].id };
+    }else{
+      base.facingMode = { ideal: 'environment' };
+    }
+    return base;
+  }
+
+  async function startNativeScan(){
+    mediaStream = await navigator.mediaDevices.getUserMedia({ video: buildVideoConstraints(), audio:false });
+    currentTrack = mediaStream.getVideoTracks()[0];
+
+    const hadCameraList = availableCameras.length > 0;
+    try{ await refreshCameraListNative(); }catch(e){}
+
+    if(!hadCameraList && availableCameras.length){
+      pickPreferredCamera();
+      const settings = currentTrack.getSettings ? currentTrack.getSettings() : {};
+      const wantId = availableCameras[currentCameraIndex] && availableCameras[currentCameraIndex].id;
+      if(wantId && settings.deviceId && settings.deviceId !== wantId){
+        mediaStream.getTracks().forEach(t=>{ try{t.stop();}catch(e){} });
+        mediaStream = await navigator.mediaDevices.getUserMedia({ video: buildVideoConstraints(), audio:false });
+        currentTrack = mediaStream.getVideoTracks()[0];
+      }
+    }
+
+    if(!videoEl){
+      videoEl = document.createElement('video');
+      videoEl.setAttribute('playsinline','true');
+      videoEl.setAttribute('autoplay','true');
+      videoEl.muted = true;
+      $('reader').insertBefore(videoEl, $('reader').firstChild);
+    }
+    videoEl.srcObject = mediaStream;
+    try{ await videoEl.play(); }catch(e){}
+
+    try{ await currentTrack.applyConstraints({ advanced: [{ focusMode:'continuous' }] }); }catch(e){}
+
+    detector = new BarcodeDetector({ formats: NATIVE_FORMATS });
+
+    engine = 'native';
+    scanning = true;
+    $('reader').classList.remove('inactive');
+    setStatus('Taranıyor — barkodu çerçeveye getirin', 'live');
+    $('btnToggleScan').textContent = '⏸ Taramayı Durdur';
+    if(availableCameras.length > 1) $('btnSwitchCam').style.display = 'inline-flex';
+
+    setupCameraControls();
+    setTimeout(setupCameraControls, 500);
+
+    nativeLoop();
+  }
+
+  function nativeLoop(){
+    if(!scanning || engine !== 'native' || !videoEl) return;
+    if(videoEl.readyState < 2){
+      rafId = requestAnimationFrame(nativeLoop);
+      return;
+    }
+    detector.detect(videoEl).then(codes=>{
+      if(codes && codes.length) onScanSuccess(codes[0].rawValue);
+    }).catch(()=>{}).finally(()=>{
+      if(scanning && engine === 'native') rafId = requestAnimationFrame(nativeLoop);
+    });
+  }
+
+  function stopNativeInternals(){
+    if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
+    if(mediaStream){ mediaStream.getTracks().forEach(t=>{ try{t.stop();}catch(e){} }); }
+    mediaStream = null; currentTrack = null; detector = null;
+    if(videoEl && videoEl.parentNode){ videoEl.parentNode.removeChild(videoEl); }
+    videoEl = null;
+  }
+
+  /* ===== 2) YEDEK MOTOR — html5-qrcode kütüphanesi (native BarcodeDetector'ı olmayan tarayıcılar için) ===== */
+  async function startHtml5QrcodeScan(){
     if(typeof Html5Qrcode === 'undefined'){
       setStatus('Tarayıcı kütüphanesi yüklenemedi — internet bağlantınızı kontrol edin.', 'err');
       return;
     }
 
-    // Her başlatmada yeni instance oluştur — kamera değiştirme sonrası temiz başlangıç
+    let overlayEl = $('scanOverlay');
+    if(overlayEl && overlayEl.parentNode){
+      overlayEl.parentNode.removeChild(overlayEl);
+    }else if(!overlayEl){
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = OVERLAY_HTML;
+      overlayEl = wrapper.firstElementChild;
+    }
+
     html5QrCode = new Html5Qrcode('reader', {
       formatsToSupport: [
         Html5QrcodeSupportedFormats.EAN_13,
@@ -560,15 +804,7 @@
       verbose:false
     });
 
-    setStatus('Kamera açılıyor…');
-
-    // Telefon dik dururken kilitlemeyi dene (sadece tam ekran/PWA bağlamında çalışır)
     try{
-      if(screen.orientation && screen.orientation.lock) screen.orientation.lock('portrait').catch(()=>{});
-    }catch(e){}
-
-    try{
-      // Kamera listesini al (bir kere al, sonra önbellekle)
       if(!availableCameras.length){
         availableCameras = await Html5Qrcode.getCameras();
       }
@@ -576,29 +812,15 @@
         setStatus('Kamera bulunamadı.', 'err');
         return;
       }
-
-      // ⚡ Kayıtlı kamera tercihini uygula
-      const prefLabel = localStorage.getItem(CAMERA_PREF_KEY);
-      let matched = false;
-      if(prefLabel){
-        const pi = availableCameras.findIndex(c => c.label === prefLabel);
-        if(pi >= 0){ currentCameraIndex = pi; matched = true; }
-      }
-      if(!matched){
-        // Tercih yoksa arka kamerayı seç
-        const bi = availableCameras.findIndex(c => /back|rear|environment|arka/i.test(c.label || ''));
-        currentCameraIndex = bi >= 0 ? bi : 0;
-      }
-
+      pickPreferredCamera();
       const camId = availableCameras[currentCameraIndex].id;
 
-      // ⚡ HIZ: Geniş tarama alanı (kolay hizalama)
-      const qrboxFn = (viewfinderWidth, viewfinderHeight) => ({
-        width: Math.floor(viewfinderWidth * 0.92),
-        height: Math.floor(viewfinderHeight * 0.22)
-      });
+      // Kare hedef alan — video daki uygulamalarla aynı hizalama mantığı
+      const qrboxFn = (viewfinderWidth, viewfinderHeight) => {
+        const size = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.76);
+        return { width: size, height: size };
+      };
 
-      // ⚡ HIZ: 30 FPS + native BarcodeDetector + flip kapalı
       await html5QrCode.start(
         { deviceId: { exact: camId } },
         {
@@ -606,44 +828,32 @@
           qrbox: qrboxFn,
           aspectRatio: 0.75,
           disableFlip: true,
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true
-          }
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true }
         },
         (decodedText) => onScanSuccess(decodedText),
         () => {}
       );
 
+      engine = 'html5qrcode';
       scanning = true;
+
+      $('reader').appendChild(overlayEl); // hedef çerçeveyi en üste geri koy
+
       $('reader').classList.remove('inactive');
       setStatus('Taranıyor — barkodu çerçeveye getirin', 'live');
       $('btnToggleScan').textContent = '⏸ Taramayı Durdur';
+      if(availableCameras.length > 1) $('btnSwitchCam').style.display = 'inline-flex';
 
-      // Kamera değiştirme butonunu göster (birden fazla kamera varsa)
-      if(availableCameras.length > 1){
-        $('btnSwitchCam').style.display = 'inline-flex';
-      }
-
-      // ⚡ ÇÖZÜNÜRLÜK: 720×960 (dikey) — barkod için ideal, CPU'yu yormaz
       try{
         await html5QrCode.applyVideoConstraints({
-          width: { ideal: 720, max: 1280 },
-          height: { ideal: 960, max: 1707 },
-          advanced: [
-            { focusMode: 'continuous' },
-            { frameRate: { ideal: 30, max: 30 } }
-          ]
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 960, max: 1440 },
+          advanced: [ { focusMode: 'continuous' }, { frameRate: { ideal: 30, max: 30 } } ]
         });
       }catch(e){
-        try{
-          await html5QrCode.applyVideoConstraints({
-            width: { ideal: 720 },
-            height: { ideal: 960 }
-          });
-        }catch(e2){}
+        try{ await html5QrCode.applyVideoConstraints({ width:{ideal:1280}, height:{ideal:960} }); }catch(e2){}
       }
 
-      // Video elementini mobil uyumlu hale getir
       const v = document.querySelector('#reader video');
       if(v){
         v.setAttribute('playsinline', 'true');
@@ -652,26 +862,33 @@
         v.muted = true;
       }
 
-      // ⚡ Kamera ısınma süresi — ilk frame hazır olmadan tarama başlamasın
       await new Promise(r => setTimeout(r, 400));
-
-      // Yetenek bilgisi (flaş/zoom) bazı cihazlarda akış oturduktan hemen sonra
-      // henüz dolu gelmeyebilir — iki kez dene.
       setupCameraControls();
       setTimeout(setupCameraControls, 600);
     }catch(err){
       setStatus('Kamera açılamadı: izin verilmedi veya bulunamadı.', 'err');
       console.error(err);
+      if(overlayEl && !overlayEl.parentNode) $('reader').appendChild(overlayEl);
     }
   }
 
-  /* ---------- Flaş / Zoom / Kamera Değiştir ---------- */
-  let torchOn = false;
+  /* ---------- Flaş / Zoom / Kamera Değiştir (her iki motor için ortak) ---------- */
+  function getCurrentCapabilities(){
+    try{
+      if(engine === 'native' && currentTrack && currentTrack.getCapabilities) return currentTrack.getCapabilities();
+      if(engine === 'html5qrcode' && html5QrCode) return html5QrCode.getRunningTrackCapabilities();
+    }catch(e){}
+    return null;
+  }
+
+  function applyTrackConstraints(advanced){
+    if(engine === 'native' && currentTrack) return currentTrack.applyConstraints({ advanced });
+    if(engine === 'html5qrcode' && html5QrCode) return html5QrCode.applyVideoConstraints({ advanced });
+    return Promise.reject(new Error('Aktif kamera yok'));
+  }
 
   function setupCameraControls(){
-    let caps = null;
-    try{ caps = html5QrCode.getRunningTrackCapabilities(); }catch(e){}
-
+    const caps = getCurrentCapabilities();
     const hasTorch = !!(caps && caps.torch);
     const hasZoom = !!(caps && caps.zoom && caps.zoom.max > caps.zoom.min);
     const hasMultiCam = availableCameras.length > 1;
@@ -693,18 +910,18 @@
   }
 
   $('btnTorch').addEventListener('click', ()=>{
-    if(!html5QrCode || !scanning) return;
+    if(!scanning) return;
     const next = !torchOn;
-    html5QrCode.applyVideoConstraints({ advanced: [{ torch: next }] })
+    applyTrackConstraints([{ torch: next }])
       .then(()=>{ torchOn = next; $('btnTorch').classList.toggle('active', torchOn); })
       .catch((e)=> console.error(e));
   });
 
   $('zoomRange').addEventListener('input', (e)=>{
     e.target.dataset.touched = '1';
-    if(!html5QrCode || !scanning) return;
+    if(!scanning) return;
     const val = parseFloat(e.target.value);
-    html5QrCode.applyVideoConstraints({ advanced: [{ zoom: val }] }).catch((e)=>console.error(e));
+    applyTrackConstraints([{ zoom: val }]).catch((e)=>console.error(e));
   });
 
   // ⚡ Kamera değiştirme — seçim localStorage'a kaydedilir
@@ -718,16 +935,9 @@
     const camLabel = availableCameras[currentCameraIndex].label || ('Kamera ' + (currentCameraIndex + 1));
     setStatus('Kamera değiştiriliyor: ' + camLabel);
 
-    // Mevcut taramayı durdur
-    try{
-      await html5QrCode.stop();
-      html5QrCode.clear();
-    }catch(e){}
-    scanning = false;
+    await stopScanInternal();
     hideCameraControls();
-
-    // Yeni kamerayla başlat
-    setTimeout(() => startScan(), 300);
+    setTimeout(() => startScan(), 250);
   });
 
   function hideCameraControls(){
@@ -737,36 +947,82 @@
     delete $('zoomRange').dataset.touched;
   }
 
-  function stopScan(){
-    if(html5QrCode && scanning){
-      html5QrCode.stop().then(()=>{
-        html5QrCode.clear();
-        scanning = false;
-        $('reader').classList.add('inactive');
-        setStatus('Kamera kapalı');
-        $('btnToggleScan').textContent = '📷 Taramayı Başlat';
-        hideCameraControls();
-      }).catch(()=>{
-        scanning = false;
-        $('reader').classList.add('inactive');
-        setStatus('Kamera kapalı');
-        $('btnToggleScan').textContent = '📷 Taramayı Başlat';
-        hideCameraControls();
-      });
+  async function stopScanInternal(){
+    if(engine === 'native'){
+      stopNativeInternals();
+    }else if(engine === 'html5qrcode' && html5QrCode){
+      try{ await html5QrCode.stop(); html5QrCode.clear(); }catch(e){}
     }
+    scanning = false;
+    engine = null;
+  }
+
+  function stopScan(){
+    if(!scanning) return;
+    stopScanInternal().finally(()=>{
+      $('reader').classList.add('inactive');
+      if(!$('scanOverlay')){
+        $('reader').insertAdjacentHTML('beforeend', OVERLAY_HTML);
+      }
+      setStatus('Kamera kapalı');
+      $('btnToggleScan').textContent = '📷 Taramayı Başlat';
+      hideCameraControls();
+    });
   }
 
   $('btnToggleScan').addEventListener('click', ()=>{
     if(scanning) stopScan(); else startScan();
   });
 
-  function onScanSuccess(code){
-    const now = Date.now();
-    if(lastScan.code === code && (now - lastScan.time) < 2500) return; // aynı kodu art arda okuma
-    lastScan = { code, time: now };
-    vibrate(); beep();
-    openForm(code);
-  }
+  /* ---------- Galeriden görsel seçip barkod/QR okuma ---------- */
+  $('btnGallery').addEventListener('click', ()=> $('galleryInput').click());
+
+  $('galleryInput').addEventListener('change', async (e)=>{
+    const file = e.target.files[0];
+    e.target.value = '';
+    if(!file) return;
+
+    const prevStatus = $('scanStatusText').textContent;
+    const prevMode = scanning ? 'live' : null;
+    setStatus('Görsel taranıyor…');
+
+    let code = null;
+    try{
+      if('BarcodeDetector' in window){
+        const bitmap = await createImageBitmap(file);
+        const det = detector || new BarcodeDetector({ formats: NATIVE_FORMATS });
+        const results = await det.detect(bitmap);
+        if(results && results.length) code = results[0].rawValue;
+      }
+      if(!code && typeof Html5Qrcode !== 'undefined'){
+        const tempId = 'tempFileScanArea';
+        let tempDiv = document.getElementById(tempId);
+        if(!tempDiv){
+          tempDiv = document.createElement('div');
+          tempDiv.id = tempId;
+          tempDiv.style.display = 'none';
+          document.body.appendChild(tempDiv);
+        }
+        const fileScanner = new Html5Qrcode(tempId, { verbose:false });
+        try{
+          code = await fileScanner.scanFile(file, false);
+        }finally{
+          try{ fileScanner.clear(); }catch(err){}
+        }
+      }
+    }catch(err){
+      console.error(err);
+    }
+
+    if(code){
+      vibrate(); beep();
+      openForm(code);
+      setStatus(prevStatus, prevMode);
+    }else{
+      setStatus('Görselde barkod/QR bulunamadı.', 'err');
+      setTimeout(()=> setStatus(prevStatus, prevMode), 2000);
+    }
+  });
 
   $('btnManualAdd').addEventListener('click', ()=>{
     const v = $('manualBarcode').value.trim();
@@ -814,12 +1070,35 @@
     $('formCard').classList.add('show');
     $('formCard').scrollIntoView({behavior:'smooth', block:'start'});
     setTimeout(()=> $('fName').focus(), 250);
+    syncFormBar();
   }
 
   function closeForm(){
     $('formCard').classList.remove('show');
     editingBarcode = null;
+    syncFormBar();
   }
+
+  // Alt sabit çubuğu form açıkken "Vazgeç / Listeye Ekle" moduna geçirir —
+  // böylece kullanıcı listeye kaydırmadan da işlemi tamamlayabilir/iptal edebilir.
+  function syncFormBar(){
+    const active = $('formCard').classList.contains('show');
+    $('exportModeBar').style.display = active ? 'none' : '';
+    $('formModeBar').style.display = active ? '' : 'none';
+    if(active){
+      $('formBarBarcode').textContent = $('formBarcode').textContent;
+      $('btnFormBarSave').textContent = $('btnSaveProduct').textContent;
+    }
+  }
+
+  $('btnFormBarCancel').addEventListener('click', closeForm);
+  $('btnFormBarSave').addEventListener('click', ()=>{
+    $('btnSaveProduct').click();
+    if($('formCard').classList.contains('show')){
+      // doğrulama hatası nedeniyle form kapanmadıysa mesajı görebilsin
+      $('formCard').scrollIntoView({behavior:'smooth', block:'start'});
+    }
+  });
 
   $('btnCancelForm').addEventListener('click', closeForm);
 
@@ -943,6 +1222,136 @@
         .map(v=>String(v).replace(/;/g,',')).join(';'));
     });
     downloadFile(lines.join('\r\n'), 'taranan-urunler.csv', 'text/csv;charset=utf-8');
+  });
+
+  /* ---------- İçe aktarma (TXT / CSV'den ürün yükleme) ---------- */
+  function setImportMsg(text, type){
+    const el = $('importMsg');
+    el.textContent = text;
+    el.className = 'import-msg' + (type ? ' ' + type : '');
+  }
+
+  function parseNum(v, fallback){
+    const n = parseFloat(String(v == null ? '' : v).trim().replace(',', '.'));
+    return isNaN(n) ? fallback : n;
+  }
+
+  function parseIntSafe(v, fallback){
+    const n = parseInt(String(v == null ? '' : v).trim(), 10);
+    return isNaN(n) ? fallback : n;
+  }
+
+  function readFileAsText(file){
+    return new Promise((resolve, reject)=>{
+      const reader = new FileReader();
+      reader.onload = ()=> resolve(String(reader.result));
+      reader.onerror = ()=> reject(reader.error);
+      reader.readAsText(file, 'utf-8');
+    });
+  }
+
+  // Barkoda göre eşleştirir: varsa günceller, yoksa yeni ekler
+  function upsertProduct(rec){
+    const idx = products.findIndex(p=>p.barcode === rec.barcode);
+    if(idx > -1){ products[idx] = Object.assign({}, products[idx], rec); return 'updated'; }
+    products.push(rec);
+    return 'added';
+  }
+
+  function importFromTxt(text){
+    const lines = text.split(/\r\n|\r|\n/);
+    let added=0, updated=0, skipped=0;
+    lines.forEach(raw=>{
+      const line = raw.trim();
+      if(!line || line.startsWith('#')) return;
+      const parts = line.split(';');
+      const name = (parts[0]||'').trim();
+      const barcode = (parts[1]||'').trim();
+      if(!name || !barcode){ skipped++; return; }
+      const existing = products.find(p=>p.barcode === barcode);
+      const rec = {
+        barcode, name,
+        price: parseNum(parts[2], existing ? existing.price : 0),
+        stock: parseIntSafe(parts[3], existing ? existing.stock : 0),
+        kdv: existing ? existing.kdv : 0,
+        critStock: existing ? existing.critStock : 5,
+        cost: existing ? existing.cost : 0,
+        expiry: existing ? existing.expiry : '',
+        category: existing ? existing.category : '',
+        supplier: existing ? existing.supplier : ''
+      };
+      (upsertProduct(rec) === 'added') ? added++ : updated++;
+    });
+    return { added, updated, skipped };
+  }
+
+  function importFromCsv(text){
+    const lines = text.split(/\r\n|\r|\n/).filter(l=>l.trim().length);
+    let added=0, updated=0, skipped=0;
+    let start = 0;
+    if(lines.length && /^ad;barkod/i.test(lines[0].trim())) start = 1;
+    for(let i=start; i<lines.length; i++){
+      const parts = lines[i].split(';');
+      const name = (parts[0]||'').trim();
+      const barcode = (parts[1]||'').trim();
+      if(!name || !barcode){ skipped++; continue; }
+      const rec = {
+        barcode, name,
+        price: parseNum(parts[2], 0),
+        kdv: parseNum(parts[3], 0),
+        stock: parseIntSafe(parts[4], 0),
+        category: (parts[5]||'').trim(),
+        critStock: parseIntSafe(parts[6], 5),
+        cost: parseNum(parts[7], 0),
+        supplier: (parts[8]||'').trim(),
+        expiry: (parts[9]||'').trim()
+      };
+      (upsertProduct(rec) === 'added') ? added++ : updated++;
+    }
+    return { added, updated, skipped };
+  }
+
+  function reportImportResult(r){
+    persist();
+    renderList();
+    if(r.added || r.updated){
+      let msg = '✔️ ' + r.added + ' yeni ürün eklendi, ' + r.updated + ' ürün güncellendi.';
+      if(r.skipped) msg += ' (' + r.skipped + ' satır okunamadı)';
+      setImportMsg(msg, 'ok');
+    }else{
+      setImportMsg('Dosyada geçerli ürün satırı bulunamadı.', 'err');
+    }
+  }
+
+  $('btnImportTxt').addEventListener('click', ()=> $('importTxtInput').click());
+  $('btnImportCsv').addEventListener('click', ()=> $('importCsvInput').click());
+
+  $('importTxtInput').addEventListener('change', async (e)=>{
+    const file = e.target.files[0];
+    e.target.value = '';
+    if(!file) return;
+    setImportMsg('Dosya okunuyor…');
+    try{
+      const text = await readFileAsText(file);
+      reportImportResult(importFromTxt(text));
+    }catch(err){
+      console.error(err);
+      setImportMsg('TXT dosyası okunamadı.', 'err');
+    }
+  });
+
+  $('importCsvInput').addEventListener('change', async (e)=>{
+    const file = e.target.files[0];
+    e.target.value = '';
+    if(!file) return;
+    setImportMsg('Dosya okunuyor…');
+    try{
+      const text = await readFileAsText(file);
+      reportImportResult(importFromCsv(text));
+    }catch(err){
+      console.error(err);
+      setImportMsg('CSV dosyası okunamadı.', 'err');
+    }
   });
 
   renderList();
